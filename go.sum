@@ -1,0 +1,4 @@
+github.com/axgle/mahonia v0.0.0-20180208002826-3358181d7394 h1:OYA+5W64v3OgClL+IrOD63t4i/RW7RqrAVl9LTZ9UqQ=
+github.com/axgle/mahonia v0.0.0-20180208002826-3358181d7394/go.mod h1:Q8n74mJTIgjX4RBBcHnJ05h//6/k6foqmgE45jTQtxg=
+github.com/will-evil/go-dbf v1.1.0 h1:NLc+oa9EwgGKMseMiIsKbgvaK1PmtK7TdobPa8F9/4s=
+github.com/will-evil/go-dbf v1.1.0/go.mod h1:wA0TH0Fch0WvjDk+e3cxG8v5STyZck9p4AlD0uYyQ0s=
