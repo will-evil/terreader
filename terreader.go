@@ -2,10 +2,20 @@
 package terreader
 
 import (
+	"errors"
+	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/will-evil/go-dbf/godbf"
+)
+
+const (
+	dateFormat               = "20060102"
+	needTrailingSpaceCharNum = 253
 )
 
 type dbfTable interface {
@@ -39,14 +49,34 @@ func NewTerReader(filePath, encoding string) (*TerReader, error) {
 	return &TerReader{dbfTable: dbfTable}, nil
 }
 
-// Read return chan for retry rows from dbf terrorist file.
-func (tr *TerReader) Read() (chan RowReadResult, error) {
+// Read return chan for retry records from dbf terrorist file.
+func (tr *TerReader) Read(chanBuff uint) (chan RowReadResult, error) {
 	if err := tr.setHelpData(); err != nil {
 		return nil, err
 	}
 
-	rowChan := make(chan RowReadResult, 5)
+	rowChan := make(chan RowReadResult, chanBuff)
 	go func() {
+		resWithError := func(number uint64, err error) RowReadResult {
+			return RowReadResult{Number: number, Error: err}
+		}
+
+		for _, number := range tr.rowNumbers {
+			rowDataSlice, ok := tr.rowDataMap[number]
+			if !ok {
+				rowChan <- resWithError(number, fmt.Errorf("key '%d' not exists is map rowDataMap", number))
+				break
+			}
+
+			row, err := tr.buildRecord(rowDataSlice)
+			if err != nil {
+				rowChan <- resWithError(number, err)
+				break
+			}
+
+			rowChan <- RowReadResult{Row: row, Number: number}
+		}
+
 		close(rowChan)
 	}()
 
@@ -91,4 +121,138 @@ func (tr *TerReader) setHelpData() error {
 	})
 
 	return nil
+}
+
+func (tr *TerReader) buildRecord(rowDataSlice []rowData) (*Row, error) {
+	if len(rowDataSlice) == 0 {
+		return nil, errors.New("rowDataSlice can not be empty")
+	}
+
+	sort.SliceStable(rowDataSlice, func(i, j int) bool {
+		return rowDataSlice[i].rowID < rowDataSlice[j].rowID
+	})
+
+	row := &Row{}
+
+	val := reflect.ValueOf(row).Elem()
+
+	for i := 0; i < val.NumField(); i++ {
+		valueField := val.Field(i)
+		typeField := val.Type().Field(i)
+		fieldName := typeField.Tag.Get("tr_col")
+		fieldType := typeField.Tag.Get("tr_type")
+		switch fieldType {
+		case "static":
+			val, err := tr.dbfTable.FieldValueByName(rowDataSlice[0].index, fieldName)
+			if err != nil {
+				return nil, err
+			}
+			valueField.SetString(val)
+		case "enum":
+			val, err := tr.getEnumValue(fieldName, rowDataSlice)
+			if err != nil {
+				return nil, err
+			}
+			valueField.SetString(val)
+		case "date":
+			val, err := tr.getDateValue(fieldName, rowDataSlice[0].index)
+			if err != nil {
+				return nil, err
+			}
+			valueField.Set(reflect.ValueOf(val))
+		case "text":
+			val, err := tr.getTextValue(fieldName, rowDataSlice)
+			if err != nil {
+				return nil, err
+			}
+			valueField.SetString(val)
+		}
+	}
+
+	return row, nil
+}
+
+func (tr *TerReader) getDateValue(fieldName string, rowIndex int) (*time.Time, error) {
+	val, err := tr.dbfTable.FieldValueByName(rowIndex, fieldName)
+	if err != nil {
+		return nil, err
+	}
+
+	if val == "" {
+		return nil, nil
+	}
+
+	t, err := time.Parse(dateFormat, val)
+
+	return &t, err
+}
+
+func (tr *TerReader) getEnumValue(fieldName string, rowDataSlice []rowData) (string, error) {
+	enumValues, err := getEnum(fieldName)
+	if err != nil {
+		return "", err
+	}
+
+	isInclude := func(el string, slice []string) bool {
+		for _, v := range slice {
+			if el == v {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	for _, data := range rowDataSlice {
+		val, err := tr.dbfTable.FieldValueByName(data.index, fieldName)
+		if err != nil {
+			return "", err
+		}
+
+		if isInclude(val, enumValues) {
+			return val, nil
+		}
+	}
+
+	return "", fmt.Errorf("can not find a suitable value for '%s'", fieldName)
+}
+
+func (tr *TerReader) getTextValue(fieldName string, rowDataSlice []rowData) (string, error) {
+	var text string
+	var lastIncludedStrLen int
+
+	for _, data := range rowDataSlice {
+		val, err := tr.dbfTable.FieldValueByName(data.index, fieldName)
+		if err != nil {
+			return "", err
+		}
+
+		if strings.Contains(text, val) || val == "" {
+			continue
+		}
+
+		leadingChar := ""
+		if lastIncludedStrLen == needTrailingSpaceCharNum {
+			leadingChar = " "
+		}
+
+		text += leadingChar + val
+
+		lastIncludedStrLen = len(val)
+	}
+
+	return text, nil
+}
+
+func getEnum(fieldName string) ([]string, error) {
+	switch fieldName {
+	case "TERROR":
+		return []string{"0", "1"}, nil
+	case "TU":
+		return []string{"1", "2", "3"}, nil
+	case "KD":
+		return []string{"0", "01", "02", "03", "04"}, nil
+	}
+
+	return []string{}, fmt.Errorf("not support field name '%s'", fieldName)
 }

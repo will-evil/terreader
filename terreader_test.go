@@ -3,52 +3,84 @@ package terreader
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func Test_TerReader_Read(t *testing.T) {
+	dbfTable := newDbfTable(getTestRows())
+	tr := TerReader{dbfTable: dbfTable}
 
+	rowReadRes, err := tr.Read(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	etalonRecords, err := getEtalonRecords()
+	if err != nil {
+
+	}
+
+	num := 0
+	for res := range rowReadRes {
+		etalon := etalonRecords[num]
+		if etalon.Error == nil && res.Error != nil {
+			t.Fatal(res.Error)
+		}
+		if etalon.Error != nil {
+			if res.Error == nil {
+				t.Errorf("error object not correct. Expected %v, got nil", etalon.Error)
+			} else if res.Error.Error() != etalon.Error.Error() {
+				t.Errorf("error message not correct. Expected \"%s\", got \"%s\"", etalon.Error.Error(), res.Error.Error())
+			}
+		}
+
+		if res.Number != etalon.Number {
+			t.Errorf("Number not correct/ Expected %d, go %d", res.Number, etalon.Number)
+		}
+
+		if !reflect.DeepEqual(*res.Row, *etalon.Row) {
+			t.Errorf("get not correct Row. Expecter %+v, got %+v", *etalon.Row, *res.Row)
+		}
+
+		num++
+	}
+
+	etalonNum := len(etalonRecords)
+	if num != etalonNum {
+		t.Errorf("received not correct num uf records. Expected %d, got %d", etalonNum, num)
+	}
 }
 
-func Test_TerReader_setHelpData(t *testing.T) {
-	rows := []map[string]string{
-		{"NUMBER": "1", "ROW_ID": "2"},
-		{"NUMBER": "2", "ROW_ID": "5"},
-		{"NUMBER": "2", "ROW_ID": "7"},
-		{"NUMBER": "2", "ROW_ID": "6"},
-		{"NUMBER": "1", "ROW_ID": "1"},
-		{"NUMBER": "1", "ROW_ID": "4"},
-		{"NUMBER": "1", "ROW_ID": "3"},
+func getTestRows() []map[string]string {
+	return []map[string]string{
+		{"NUMBER": "1", "TERROR": "1", "TU": "3", "NAMEU": "Olubunmi Pam", "DESCRIPT": "", "KODCR": "004-97", "KODCN": "8624", "AMR": "4258 Queens Lane", "ADRESS": "2066 Confederate Drive", "KD": "01", "SD": "06458975", "RG": "632514", "ND": "718580865862", "VD": "knjoocgbbh", "GR": "20200821", "YR": "2008", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "1", "TERRTYPE": "Resolution 1989"},
+		{"NUMBER": "1", "TERROR": "1", "TU": "3", "NAMEU": "Olubunmi Pam", "DESCRIPT": "Diam quam nulla porttitor massa", "KODCR": "004-97", "KODCN": "8624", "AMR": "4258 Queens Lane", "ADRESS": "2066 Confederate Drive", "KD": "01", "SD": "06458975", "RG": "632514", "ND": "718580865862", "VD": "knjoocgbbh", "GR": "20200821", "YR": "2008", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "2", "TERRTYPE": "Resolution 1989"},
+		{"NUMBER": "3", "TERROR": "0", "TU": "2", "NAMEU": "Luctus accumsan", "DESCRIPT": "", "KODCR": "004-55", "KODCN": "9632", "AMR": "8855 venenatis", "ADRESS": "624 Venenatis", "KD": "04", "SD": "654684", "RG": "233044", "ND": "46761616", "VD": "pellentesque", "GR": "", "YR": "2005", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "5", "TERRTYPE": "Resolution 1959"},
+		{"NUMBER": "2", "TERROR": "1", "TU": "3", "NAMEU": "Neque sodales", "DESCRIPT": "Quis risus sed vulputate odio", "KODCR": "005-66", "KODCN": "3256", "AMR": "4258 Queens Lane", "ADRESS": "2066 Confederate Drive", "KD": "01", "SD": "06458975", "RG": "632514", "ND": "718580865862", "VD": "Interdum posuere", "GR": "20200821", "YR": "", "MR": "Elit pellentesque", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "Adipiscing enim", "ROW_ID": "4", "TERRTYPE": "Sed risus pretium"},
+		{"NUMBER": "2", "TERROR": "", "TU": "3", "NAMEU": "Neque sodales", "DESCRIPT": "Quis risus sed vulputate odio", "KODCR": "005-66", "KODCN": "3256", "AMR": "4258 Queens Lane", "ADRESS": "2066 Confederate Drive", "KD": "01", "SD": "06458975", "RG": "632514", "ND": "718580865862", "VD": "Interdum posuere", "GR": "20200821", "YR": "2005", "MR": "Elit pellentesque", "CB_DATE": "20190501", "CE_DATE": "20110101", "DIRECTOR": "Ac felis donec et odio", "FOUNDER": "", "ROW_ID": "3", "TERRTYPE": ""},
+		{"NUMBER": "4", "TERROR": "1", "TU": "1", "NAMEU": "Nulla facilisi nullam vehicula ipsum a arcu cursus. Elit eget gravida cum sociis natoque penatibus et magnis. Maecenas volutpat blandit aliquam etiam erat eta. Venenatis lectus magna fringilla urna porttitor rhoncus dolor purus. Fermentum posuere urna ne", "DESCRIPT": "", "KODCR": "654-133", "KODCN": "5238", "AMR": "Neque volutpat", "ADRESS": "", "KD": "01", "SD": "58692315", "RG": "865125", "ND": "", "VD": "", "GR": "", "YR": "", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "5", "TERRTYPE": ""},
+		{"NUMBER": "4", "TERROR": "1", "TU": "1", "NAMEU": "c tincidunt praesent semper feugiat nibh.", "DESCRIPT": "", "KODCR": "654-133", "KODCN": "5238", "AMR": "Neque volutpat", "ADRESS": "", "KD": "01", "SD": "58692315", "RG": "865125", "ND": "", "VD": "", "GR": "", "YR": "", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "6", "TERRTYPE": ""},
+		{"NUMBER": "5", "TERROR": "1", "TU": "1", "NAMEU": "In cursus turpis massa tincidunt dui ut ornare lectus sit. Vitae sapien pellentesque habitant morbi tristique senectus et netus et. Sagittis id consectetur purus ut. Vel pharetra vel turpisu nunc eget lorem dolor sed. Urna id volutpatar lacusan laoreet.", "DESCRIPT": "", "KODCR": "052-752", "KODCN": "2580", "AMR": "Neque volutpat", "ADRESS": "", "KD": "01", "SD": "3688", "RG": "548877", "ND": "", "VD": "", "GR": "", "YR": "", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "7", "TERRTYPE": ""},
+		{"NUMBER": "5", "TERROR": "1", "TU": "1", "NAMEU": "Amet facilisis magna etiam tempor orci eu lobortis elementum nibh.", "DESCRIPT": "", "KODCR": "052-752", "KODCN": "2580", "AMR": "Neque volutpat", "ADRESS": "", "KD": "01", "SD": "3688", "RG": "548877", "ND": "", "VD": "", "GR": "", "YR": "", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "8", "TERRTYPE": ""},
+		{"NUMBER": "6", "TERROR": "1", "TU": "1", "NAMEU": "Dolor sed viverra ipsum nunc", "DESCRIPT": "Dolor purus non enim praesent. Et pharetra pharetra massa massa ultricies. Fermentum odio eu feugiat pretium. A diam maecenas sed enim ut sem viverra. Duis ut diam quam nulla porttitor massa id neque. Ac tortor dignissim convallis aenean et tortor at ris", "KODCR": "688-888", "KODCN": "6822", "AMR": "", "ADRESS": "", "KD": "04", "SD": "", "RG": "", "ND": "464655", "VD": "", "GR": "20060223", "YR": "", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "9", "TERRTYPE": ""},
+		{"NUMBER": "6", "TERROR": "1", "TU": "1", "NAMEU": "Dolor sed viverra ipsum nunc", "DESCRIPT": "us viverra. Viverra nibh cras pulvinar mattis nunc sed blandit.", "KODCR": "688-888", "KODCN": "6822", "AMR": "", "ADRESS": "", "KD": "04", "SD": "", "RG": "", "ND": "464655", "VD": "", "GR": "20060223", "YR": "", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "10", "TERRTYPE": ""},
 	}
-	dbfTable := newDbfTable(rows)
-	tr := TerReader{dbfTable: dbfTable}
-	tr.setHelpData()
+}
 
-	rowDataMap := map[uint64][]rowData{
-		1: {
-			{index: 0, rowID: 2},
-			{index: 4, rowID: 1},
-			{index: 5, rowID: 4},
-			{index: 6, rowID: 3},
-		},
-		2: {
-			{index: 1, rowID: 5},
-			{index: 2, rowID: 7},
-			{index: 3, rowID: 6},
-		},
-	}
-	for number, etalonSlice := range rowDataMap {
-		resultSlice, ok := tr.rowDataMap[number]
-		if !ok {
-			t.Errorf("key '%d' not exists in result map", number)
-			continue
-		}
-		if !reflect.DeepEqual(resultSlice, etalonSlice) {
-			t.Errorf("value for key '%d' not correct. Expected %v, got %v", number, etalonSlice, resultSlice)
-		}
-	}
+func getEtalonRecords() ([]RowReadResult, error) {
+	Gr := time.Date(2020, time.August, 21, 0, 0, 0, 0, time.UTC)
 
-	rowNumbers := []uint64{1, 2}
-	if !reflect.DeepEqual(tr.rowNumbers, rowNumbers) {
-		t.Errorf("rowNumbers not equal. Expected %v, got %v", rowNumbers, tr.rowNumbers)
-	}
+	CbDate2 := time.Date(2019, time.May, 01, 0, 0, 0, 0, time.UTC)
+	CeDate2 := time.Date(2011, time.January, 01, 0, 0, 0, 0, time.UTC)
+
+	Gr9 := time.Date(2006, time.February, 23, 0, 0, 0, 0, time.UTC)
+
+	return []RowReadResult{
+		{&Row{Number: "1", Terror: "1", Tu: "3", Nameu: "Olubunmi Pam", Descript: "Diam quam nulla porttitor massa", Kodcr: "004-97", Kodcn: "8624", Amr: "4258 Queens Lane", Address: "2066 Confederate Drive", Kd: "01", Sd: "06458975", Rg: "632514", Nd: "718580865862", Vd: "knjoocgbbh", Gr: &Gr, Yr: "2008", Mr: "", CbDate: nil, CeDate: nil, Director: "", Founder: "", RowID: "1", Terrtype: "Resolution 1989"}, 1, nil},
+		{&Row{Number: "2", Terror: "1", Tu: "3", Nameu: "Neque sodales", Descript: "Quis risus sed vulputate odio", Kodcr: "005-66", Kodcn: "3256", Amr: "4258 Queens Lane", Address: "2066 Confederate Drive", Kd: "01", Sd: "06458975", Rg: "632514", Nd: "718580865862", Vd: "Interdum posuere", Gr: &Gr, Yr: "2005", Mr: "Elit pellentesque", CbDate: &CbDate2, CeDate: &CeDate2, Director: "Ac felis donec et odio", Founder: "Adipiscing enim", RowID: "3", Terrtype: "Sed risus pretium"}, 2, nil},
+		{&Row{Number: "3", Terror: "0", Tu: "2", Nameu: "Luctus accumsan", Descript: "", Kodcr: "004-55", Kodcn: "9632", Amr: "8855 venenatis", Address: "624 Venenatis", Kd: "04", Sd: "654684", Rg: "233044", Nd: "46761616", Vd: "pellentesque", Gr: nil, Yr: "2005", Mr: "", CbDate: nil, CeDate: nil, Director: "", Founder: "", RowID: "5", Terrtype: "Resolution 1959"}, 3, nil},
+		{&Row{Number: "4", Terror: "1", Tu: "1", Nameu: "Nulla facilisi nullam vehicula ipsum a arcu cursus. Elit eget gravida cum sociis natoque penatibus et magnis. Maecenas volutpat blandit aliquam etiam erat eta. Venenatis lectus magna fringilla urna porttitor rhoncus dolor purus. Fermentum posuere urna nec tincidunt praesent semper feugiat nibh.", Descript: "", Kodcr: "654-133", Kodcn: "5238", Amr: "Neque volutpat", Address: "", Kd: "01", Sd: "58692315", Rg: "865125", Nd: "", Vd: "", Gr: nil, Yr: "", Mr: "", CbDate: nil, CeDate: nil, Director: "", Founder: "", RowID: "5", Terrtype: ""}, 4, nil},
+		{&Row{Number: "5", Terror: "1", Tu: "1", Nameu: "In cursus turpis massa tincidunt dui ut ornare lectus sit. Vitae sapien pellentesque habitant morbi tristique senectus et netus et. Sagittis id consectetur purus ut. Vel pharetra vel turpisu nunc eget lorem dolor sed. Urna id volutpatar lacusan laoreet. Amet facilisis magna etiam tempor orci eu lobortis elementum nibh.", Descript: "", Kodcr: "052-752", Kodcn: "2580", Amr: "Neque volutpat", Address: "", Kd: "01", Sd: "3688", Rg: "548877", Nd: "", Vd: "", Gr: nil, Yr: "", Mr: "", CbDate: nil, CeDate: nil, Director: "", Founder: "", RowID: "7", Terrtype: ""}, 5, nil},
+		{&Row{Number: "6", Terror: "1", Tu: "1", Nameu: "Dolor sed viverra ipsum nunc", Descript: "Dolor purus non enim praesent. Et pharetra pharetra massa massa ultricies. Fermentum odio eu feugiat pretium. A diam maecenas sed enim ut sem viverra. Duis ut diam quam nulla porttitor massa id neque. Ac tortor dignissim convallis aenean et tortor at risus viverra. Viverra nibh cras pulvinar mattis nunc sed blandit.", Kodcr: "688-888", Kodcn: "6822", Amr: "", Address: "", Kd: "04", Sd: "", Rg: "", Nd: "464655", Vd: "", Gr: &Gr9, Yr: "", Mr: "", CbDate: nil, CeDate: nil, Director: "", Founder: "", RowID: "9", Terrtype: ""}, 6, nil},
+	}, nil
 }
