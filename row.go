@@ -4,9 +4,9 @@ import "time"
 
 // Row is struct for store data of row from file.
 type Row struct {
-	Number   uint64
-	Terror   bool
-	Tu       uint8
+	Number   string
+	Terror   string
+	Tu       string
 	Nameu    string
 	Descript string
 	Kodcr    string
