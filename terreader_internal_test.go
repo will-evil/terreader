@@ -52,6 +52,61 @@ func Test_TerReader_setHelpData(t *testing.T) {
 	}
 }
 
+// When rowDataMap already set.
+func Test_TerReader_setHelpData_WhenDataMapAlreadySet(t *testing.T) {
+	dataMap := rowDataMap{
+		1: []rowData{},
+	}
+	tr := TerReader{rowDataMap: dataMap}
+	if err := tr.setHelpData(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func Test_TerReader_buildRecord(t *testing.T) {
+	tr := TerReader{}
+	row, err := tr.buildRecord([]rowData{})
+	if row != nil {
+		t.Errorf("row not correct. Expected nil, got %+v", row)
+	}
+
+	etalonError := errors.New("rowDataSlice can not be empty")
+	if err.Error() != etalonError.Error() {
+		t.Errorf("error message not correct. Expected \"%s\", got \"%s\"", etalonError.Error(), err.Error())
+	}
+}
+
+func Test_TerReader_getEnumValue(t *testing.T) {
+	testCases := []struct {
+		fieldName    string
+		rowDataSlice []rowData
+		res          string
+		err          error
+	}{
+		{"NOT_SUPPORT", []rowData{}, "", errors.New("not support field name 'NOT_SUPPORT'")},
+	}
+
+	tr := TerReader{}
+	for _, testCase := range testCases {
+		res, err := tr.getEnumValue(testCase.fieldName, testCase.rowDataSlice)
+
+		if testCase.err == nil && err != nil {
+			t.Fatal(err)
+		}
+		if testCase.err != nil {
+			if err == nil {
+				t.Errorf("error object not correct. Expected %v, got nil", testCase.err)
+			} else if err.Error() != testCase.err.Error() {
+				t.Errorf("error message not correct. Expected \"%s\", got \"%s\"", testCase.err.Error(), err.Error())
+			}
+		}
+
+		if testCase.res != res {
+			t.Errorf("get not correct string. Expected \"%s\", got \"%s\"", testCase.res, res)
+		}
+	}
+}
+
 func Test_getEnum(t *testing.T) {
 	testCases := [4]struct {
 		field string
