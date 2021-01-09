@@ -1,14 +1,35 @@
+// Copyright © 2021 Alexey Konovalenko
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package terreader provides functional for reading data from terrorists database which comes as a dbf file.
 package terreader
 
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/will-evil/go-dbf/godbf"
+)
+
+const (
+	dateFormat               = "20060102"
+	needTrailingSpaceCharNum = 253
 )
 
 type dbfTable interface {
@@ -43,12 +64,12 @@ func NewTerReader(filePath, encoding string) (*TerReader, error) {
 }
 
 // Read return chan for retry records from dbf terrorist file.
-func (tr *TerReader) Read() (chan RowReadResult, error) {
+func (tr *TerReader) Read(chanBuff uint) (chan RowReadResult, error) {
 	if err := tr.setHelpData(); err != nil {
 		return nil, err
 	}
 
-	rowChan := make(chan RowReadResult, 5)
+	rowChan := make(chan RowReadResult, chanBuff)
 	go func() {
 		resWithError := func(number uint64, err error) RowReadResult {
 			return RowReadResult{Number: number, Error: err}
@@ -67,7 +88,7 @@ func (tr *TerReader) Read() (chan RowReadResult, error) {
 				break
 			}
 
-			rowChan <- RowReadResult{Row: row}
+			rowChan <- RowReadResult{Row: row, Number: number}
 		}
 
 		close(rowChan)
@@ -127,99 +148,63 @@ func (tr *TerReader) buildRecord(rowDataSlice []rowData) (*Row, error) {
 
 	row := &Row{}
 
-	if err := tr.setStaticFields(row, rowDataSlice[0].index); err != nil {
-		return nil, err
-	}
+	val := reflect.ValueOf(row).Elem()
 
-	if err := tr.setDateFields(row, rowDataSlice[0].index); err != nil {
-		return nil, err
-	}
-
-	for _, rowData := range rowDataSlice {
-		if err := tr.setEnumFields(row, rowData.index); err != nil {
-			return nil, err
-		}
-		if err := tr.setTextFields(row, rowData.index); err != nil {
-			return nil, err
+	for i := 0; i < val.NumField(); i++ {
+		valueField := val.Field(i)
+		typeField := val.Type().Field(i)
+		fieldName := typeField.Tag.Get("tr_col")
+		fieldType := typeField.Tag.Get("tr_type")
+		switch fieldType {
+		case "static":
+			val, err := tr.dbfTable.FieldValueByName(rowDataSlice[0].index, fieldName)
+			if err != nil {
+				return nil, err
+			}
+			valueField.SetString(val)
+		case "enum":
+			val, err := tr.getEnumValue(fieldName, rowDataSlice)
+			if err != nil {
+				return nil, err
+			}
+			valueField.SetString(val)
+		case "date":
+			val, err := tr.getDateValue(fieldName, rowDataSlice[0].index)
+			if err != nil {
+				return nil, err
+			}
+			valueField.Set(reflect.ValueOf(val))
+		case "text":
+			val, err := tr.getTextValue(fieldName, rowDataSlice)
+			if err != nil {
+				return nil, err
+			}
+			valueField.SetString(val)
 		}
 	}
 
 	return row, nil
 }
 
-func (tr *TerReader) setStaticFields(row *Row, rowIndex int) error {
-	staticFields := []struct {
-		name  string
-		value *string
-	}{
-		{"NUMBER", &row.Number},
-		{"KODCR", &row.Kodcr},
-		{"KODCN", &row.Kodcn},
-		{"SD", &row.Sd},
-		{"RG", &row.Rg},
-		{"ND", &row.Nd},
-		{"VD", &row.Vd},
-		{"YR", &row.Yr},
-		{"ROW_ID", &row.RowID},
+func (tr *TerReader) getDateValue(fieldName string, rowIndex int) (*time.Time, error) {
+	val, err := tr.dbfTable.FieldValueByName(rowIndex, fieldName)
+	if err != nil {
+		return nil, err
 	}
 
-	for _, field := range staticFields {
-		v, err := tr.dbfTable.FieldValueByName(rowIndex, field.name)
-		if err != nil {
-			return err
-		}
-		*field.value = v
+	if val == "" {
+		return nil, nil
 	}
 
-	return nil
+	t, err := time.Parse(dateFormat, val)
+
+	return &t, err
 }
 
-func (tr *TerReader) setDateFields(row *Row, rowIndex int) error {
-	getDate := func(fieldName string) (*time.Time, error) {
-		str, err := tr.dbfTable.FieldValueByName(rowIndex, fieldName)
-		if err != nil {
-			return nil, err
-		}
-
-		if str == "" {
-			return nil, nil
-		}
-
-		t, err := time.Parse("20060102", str)
-
-		return &t, err
-	}
-
-	grDate, err := getDate("GR")
+func (tr *TerReader) getEnumValue(fieldName string, rowDataSlice []rowData) (string, error) {
+	enumValues, err := getEnum(fieldName)
 	if err != nil {
-		return err
-	}
-	row.Gr = grDate
-
-	cbDate, err := getDate("CB_DATE")
-	if err != nil {
-		return err
-	}
-	row.CbDate = cbDate
-
-	ceDate, err := getDate("CE_DATE")
-	if err != nil {
-		return err
-	}
-	row.CeDate = ceDate
-
-	return nil
-}
-
-func (tr *TerReader) setEnumFields(row *Row, rowIndex int) error {
-	enumFields := []struct {
-		name  string
-		enum  []string
-		value *string
-	}{
-		{"TERROR", []string{"0", "1"}, &row.Terror},
-		{"TU", []string{"1", "2", "3"}, &row.Tu},
-		{"KD", []string{"0", "01", "02", "03", "04"}, &row.Kd},
+		return "", err
 	}
 
 	isInclude := func(el string, slice []string) bool {
@@ -232,22 +217,56 @@ func (tr *TerReader) setEnumFields(row *Row, rowIndex int) error {
 		return false
 	}
 
-	for _, field := range enumFields {
-		if isInclude(*field.value, field.enum) {
+	for _, data := range rowDataSlice {
+		val, err := tr.dbfTable.FieldValueByName(data.index, fieldName)
+		if err != nil {
+			return "", err
+		}
+
+		if isInclude(val, enumValues) {
+			return val, nil
+		}
+	}
+
+	return "", fmt.Errorf("can not find a suitable value for '%s'", fieldName)
+}
+
+func (tr *TerReader) getTextValue(fieldName string, rowDataSlice []rowData) (string, error) {
+	var text string
+	var lastIncludedStrLen int
+
+	for _, data := range rowDataSlice {
+		val, err := tr.dbfTable.FieldValueByName(data.index, fieldName)
+		if err != nil {
+			return "", err
+		}
+
+		if strings.Contains(text, val) || val == "" {
 			continue
 		}
 
-		str, err := tr.dbfTable.FieldValueByName(rowIndex, field.name)
-		if err != nil {
-			return err
+		leadingChar := ""
+		if lastIncludedStrLen == needTrailingSpaceCharNum {
+			leadingChar = " "
 		}
 
-		*field.value = str
+		text += leadingChar + val
+
+		lastIncludedStrLen = len(val)
 	}
 
-	return nil
+	return text, nil
 }
 
-func (tr *TerReader) setTextFields(row *Row, rowIndex int) error {
-	return nil
+func getEnum(fieldName string) ([]string, error) {
+	switch fieldName {
+	case "TERROR":
+		return []string{"0", "1"}, nil
+	case "TU":
+		return []string{"1", "2", "3"}, nil
+	case "KD":
+		return []string{"0", "01", "02", "03", "04"}, nil
+	}
+
+	return []string{}, fmt.Errorf("not support field name '%s'", fieldName)
 }
