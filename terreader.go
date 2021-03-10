@@ -32,6 +32,8 @@ const (
 	needTrailingSpaceCharNum = 253
 )
 
+var newFromByteSlice = godbf.NewFromByteArray
+
 type dbfTable interface {
 	NumberOfRecords() int
 	FieldValueByName(row int, fieldName string) (string, error)
@@ -56,6 +58,16 @@ type TerReader struct {
 // NewTerReader is a constructor for TerReader structure.
 func NewTerReader(filePath, encoding string) (*TerReader, error) {
 	dbfTable, err := godbf.NewFromFile(filePath, encoding)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TerReader{dbfTable: dbfTable}, nil
+}
+
+// NewTerReaderFromByteSlice is a TerReader constructor for slice of bytes.
+func NewTerReaderFromByteSlice(data []byte, encoding string) (*TerReader, error) {
+	dbfTable, err := newFromByteSlice(data, encoding)
 	if err != nil {
 		return nil, err
 	}

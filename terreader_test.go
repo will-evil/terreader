@@ -2,9 +2,12 @@ package terreader
 
 import (
 	"errors"
+	"io/ioutil"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/will-evil/go-dbf/godbf"
 )
 
 const fileEncoding = "866"
@@ -48,6 +51,37 @@ func Test_NewTerReader(t *testing.T) {
 		if testCase.reader != nil && reader == nil {
 			t.Error("get not correct Row. Expecter structure, got nil")
 		}
+	}
+}
+
+func Test_NewTerReaderFromByteSlice(t *testing.T) {
+	b, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reader, err := NewTerReaderFromByteSlice(b, fileEncoding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader == nil {
+		t.Error("get not correct Row. Expecter structure, got nil")
+	}
+}
+
+func Test_NewTerReaderFromByteSlice_WhenReturnError(t *testing.T) {
+	etalonError := errors.New("NewTerReaderFromByteSlice_Error")
+
+	newFromByteSlice = func(data []byte, fileEncoding string) (*godbf.DbfTable, error) {
+		return nil, etalonError
+	}
+
+	reader, err := NewTerReaderFromByteSlice([]byte{}, fileEncoding)
+	if err != etalonError {
+		t.Fatalf("error object not correct. Expected %v, got %v", etalonError, err)
+	}
+	if reader != nil {
+		t.Errorf("get not correct Row. Expecter nil, got %v", reader)
 	}
 }
 
