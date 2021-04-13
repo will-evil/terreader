@@ -1,6 +1,7 @@
 package terreader
 
 import (
+	"context"
 	"errors"
 	"io/ioutil"
 	"reflect"
@@ -85,10 +86,30 @@ func Test_NewTerReaderFromByteSlice_WhenReturnError(t *testing.T) {
 	}
 }
 
+func Test_WithContext(t *testing.T) {
+	tr, err := NewTerReader(filePath, fileEncoding)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tr.WithContext(ctx)
+
+	rowReadRes, err := tr.Read(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := (<-rowReadRes); ok {
+		t.Error("channel is still open")
+	}
+}
+
 func Test_TerReader_Read(t *testing.T) {
 	for _, testCase := range getTestCases() {
 		dbfTable := newDbfTable(testCase.rows)
-		tr := TerReader{dbfTable: dbfTable}
+		tr := TerReader{dbfTable: dbfTable, ctx: context.Background()}
 
 		rowReadRes, err := tr.Read(5)
 		if testCase.err == nil && err != nil {
@@ -196,6 +217,7 @@ func Test_TerReader_Reader_WhenHelpDataIncorrect(t *testing.T) {
 			2: []rowData{},
 		},
 		rowNumbers: []uint64{1},
+		ctx:        context.Background(),
 	}
 
 	rowReadRes, err := tr.Read(5)

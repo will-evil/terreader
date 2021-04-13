@@ -16,6 +16,7 @@
 package terreader
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -53,6 +54,7 @@ type TerReader struct {
 	dbfTable   dbfTable
 	rowDataMap rowDataMap
 	rowNumbers []uint64
+	ctx        context.Context
 }
 
 // NewTerReader is a constructor for TerReader structure.
@@ -62,7 +64,7 @@ func NewTerReader(filePath, encoding string) (*TerReader, error) {
 		return nil, err
 	}
 
-	return &TerReader{dbfTable: dbfTable}, nil
+	return &TerReader{dbfTable: dbfTable, ctx: context.Background()}, nil
 }
 
 // NewTerReaderFromByteSlice is a TerReader constructor for slice of bytes.
@@ -72,7 +74,15 @@ func NewTerReaderFromByteSlice(data []byte, encoding string) (*TerReader, error)
 		return nil, err
 	}
 
-	return &TerReader{dbfTable: dbfTable}, nil
+	return &TerReader{dbfTable: dbfTable, ctx: context.Background()}, nil
+}
+
+// WithContext set provided value like a value for ctx field in TerReader object.
+// The provided ctx must be non-nil.
+func (tr *TerReader) WithContext(ctx context.Context) *TerReader {
+	tr.ctx = ctx
+
+	return tr
 }
 
 // Read return chan for retry records from dbf terrorist file.
@@ -83,27 +93,33 @@ func (tr *TerReader) Read(chanBuff uint) (chan RowReadResult, error) {
 
 	rowChan := make(chan RowReadResult, chanBuff)
 	go func() {
+		defer close(rowChan)
+
 		resWithError := func(number uint64, err error) RowReadResult {
 			return RowReadResult{Number: number, Error: err}
 		}
 
+	loop:
 		for _, number := range tr.rowNumbers {
-			rowDataSlice, ok := tr.rowDataMap[number]
-			if !ok {
-				rowChan <- resWithError(number, fmt.Errorf("key '%d' not exists is map rowDataMap", number))
-				break
-			}
+			select {
+			case <-tr.ctx.Done():
+				break loop
+			default:
+				rowDataSlice, ok := tr.rowDataMap[number]
+				if !ok {
+					rowChan <- resWithError(number, fmt.Errorf("key '%d' not exists is map rowDataMap", number))
+					break
+				}
 
-			row, err := tr.buildRecord(rowDataSlice)
-			if err != nil {
-				rowChan <- resWithError(number, err)
-				break
-			}
+				row, err := tr.buildRecord(rowDataSlice)
+				if err != nil {
+					rowChan <- resWithError(number, err)
+					break
+				}
 
-			rowChan <- RowReadResult{Row: row, Number: number}
+				rowChan <- RowReadResult{Row: row, Number: number}
+			}
 		}
-
-		close(rowChan)
 	}()
 
 	return rowChan, nil
