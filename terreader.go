@@ -108,13 +108,13 @@ func (tr *TerReader) Read(chanBuff uint) (chan RowReadResult, error) {
 				rowDataSlice, ok := tr.rowDataMap[number]
 				if !ok {
 					rowChan <- resWithError(number, fmt.Errorf("key '%d' not exists is map rowDataMap", number))
-					break
+					break loop
 				}
 
 				row, err := tr.buildRecord(rowDataSlice)
 				if err != nil {
 					rowChan <- resWithError(number, err)
-					break
+					break loop
 				}
 
 				rowChan <- RowReadResult{Row: row, Number: number}
