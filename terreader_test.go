@@ -20,7 +20,7 @@ type readTestCase struct {
 	err     error
 }
 
-func Test_NewTerReader(t *testing.T) {
+func TestNewTerReader(t *testing.T) {
 	testCases := []struct {
 		path     string
 		encoding string
@@ -55,38 +55,42 @@ func Test_NewTerReader(t *testing.T) {
 	}
 }
 
-func Test_NewTerReaderFromByteSlice(t *testing.T) {
-	b, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestNewTerReaderFromByteSlice(t *testing.T) {
+	t.Run("when created successfully", func(t *testing.T) {
+		b, err := ioutil.ReadFile(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	reader, err := NewTerReaderFromByteSlice(b, fileEncoding)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reader == nil {
-		t.Error("get not correct Row. Expecter structure, got nil")
-	}
+		reader, err := NewTerReaderFromByteSlice(b, fileEncoding)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reader == nil {
+			t.Error("get not correct Row. Expecter structure, got nil")
+		}
+	})
+
+	t.Run("when return error", func(t *testing.T) {
+		etalonError := errors.New("NewTerReaderFromByteSlice_Error")
+
+		newFromByteSliceOriginal := newFromByteSlice
+		newFromByteSlice = func(data []byte, fileEncoding string) (*godbf.DbfTable, error) {
+			return nil, etalonError
+		}
+		defer func() { newFromByteSlice = newFromByteSliceOriginal }()
+
+		reader, err := NewTerReaderFromByteSlice([]byte{}, fileEncoding)
+		if err != etalonError {
+			t.Fatalf("error object not correct. Expected %v, got %v", etalonError, err)
+		}
+		if reader != nil {
+			t.Errorf("get not correct Row. Expecter nil, got %v", reader)
+		}
+	})
 }
 
-func Test_NewTerReaderFromByteSlice_WhenReturnError(t *testing.T) {
-	etalonError := errors.New("NewTerReaderFromByteSlice_Error")
-
-	newFromByteSlice = func(data []byte, fileEncoding string) (*godbf.DbfTable, error) {
-		return nil, etalonError
-	}
-
-	reader, err := NewTerReaderFromByteSlice([]byte{}, fileEncoding)
-	if err != etalonError {
-		t.Fatalf("error object not correct. Expected %v, got %v", etalonError, err)
-	}
-	if reader != nil {
-		t.Errorf("get not correct Row. Expecter nil, got %v", reader)
-	}
-}
-
-func Test_WithContext(t *testing.T) {
+func TestTerReader_WithContext(t *testing.T) {
 	tr, err := NewTerReader(filePath, fileEncoding)
 	if err != nil {
 		t.Fatal(err)
@@ -106,26 +110,99 @@ func Test_WithContext(t *testing.T) {
 	}
 }
 
-func Test_TerReader_Read(t *testing.T) {
-	for _, testCase := range getTestCases() {
-		dbfTable := newDbfTable(testCase.rows)
-		tr := TerReader{dbfTable: dbfTable, ctx: context.Background()}
+func TestTerReader_AllowEmptyEnumValues(t *testing.T) {
+	tr, err := NewTerReader(filePath, fileEncoding)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		rowReadRes, err := tr.Read(5)
-		if testCase.err == nil && err != nil {
+	if tr.allowEmptyEnumValues {
+		t.Error("Option allowEmptyEnumValues has not correct value after struct initialize. Expected false, got true")
+	}
+
+	tr.AllowEmptyEnumValues()
+
+	if tr.allowEmptyEnumValues != true {
+		t.Error("Option allowEmptyEnumValues has not correct value after call AllowEmptyEnumValues. Expected false, got true")
+	}
+}
+
+func TestTerReader_Read(t *testing.T) {
+	t.Run("when use mock dbf file data", func(t *testing.T) {
+		for _, testCase := range getTestCases() {
+			dbfTable := newDbfTable(testCase.rows)
+			tr := TerReader{dbfTable: dbfTable, ctx: context.Background()}
+
+			rowReadRes, err := tr.Read(5)
+			if testCase.err == nil && err != nil {
+				t.Fatal(err)
+			}
+			if testCase.err != nil {
+				if err == nil {
+					t.Fatalf("error object not correct. Expected %v, got nil", testCase.err)
+				} else if err.Error() != testCase.err.Error() {
+					t.Fatalf("error message not correct. Expected \"%s\", got \"%s\"", testCase.err.Error(), err.Error())
+				}
+				continue
+			}
+
+			num := 0
+			etalonRecords := testCase.results
+			for res := range rowReadRes {
+				etalon := etalonRecords[num]
+				if etalon.Error == nil && res.Error != nil {
+					t.Fatal(res.Error)
+				}
+				if etalon.Error != nil {
+					if res.Error == nil {
+						t.Errorf("error object not correct. Expected %v, got nil", etalon.Error)
+					} else if res.Error.Error() != etalon.Error.Error() {
+						t.Errorf("error message not correct. Expected \"%s\", got \"%s\"", etalon.Error.Error(), res.Error.Error())
+					}
+				}
+
+				if res.Number != etalon.Number {
+					t.Errorf("Number not correct/ Expected %d, go %d", res.Number, etalon.Number)
+				}
+
+				if etalon.Row != nil {
+					if res.Row == nil {
+						t.Errorf("get not correct Row. Expecter %+v, got nil", *etalon.Row)
+					} else if !reflect.DeepEqual(*res.Row, *etalon.Row) {
+						t.Errorf("get not correct Row. Expecter %+v, got %+v", *etalon.Row, *res.Row)
+					}
+				} else if res.Row != nil {
+					t.Errorf("get not correct Row. Expecter nil, got %+v", *res.Row)
+				}
+
+				num++
+			}
+
+			etalonNum := len(etalonRecords)
+			if num != etalonNum {
+				t.Errorf("received not correct num of records. Expected %d, got %d", etalonNum, num)
+			}
+		}
+	})
+
+	t.Run("when use real pdf file", func(t *testing.T) {
+		tr, err := NewTerReader(filePath, fileEncoding)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if testCase.err != nil {
-			if err == nil {
-				t.Fatalf("error object not correct. Expected %v, got nil", testCase.err)
-			} else if err.Error() != testCase.err.Error() {
-				t.Fatalf("error message not correct. Expected \"%s\", got \"%s\"", testCase.err.Error(), err.Error())
-			}
-			continue
+
+		rowReadRes, err := tr.Read(5)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		Gr := time.Date(1988, time.September, 05, 0, 0, 0, 0, time.UTC)
+		CbDate := time.Date(2012, time.November, 10, 0, 0, 0, 0, time.UTC)
+		etalonRecords := []RowReadResult{
+			{&Row{Number: "1", Terror: "1", Tu: "3", Nameu: "Pharetra magna ac placerat", Descript: "Facilisi etiam dignissim diam quis enim lobortis. Suscipit adipiscing bibendum est ultricies integer quis auctor. At tempor commodo ullamcorper a lacus vestibulum sed arcu. Augue ut lectus arcu bibendum. Porttitor rhoncus dolor purus non enim praesent. Ac tincidunt vitae semper quis lectus nulla at volutpat diam.", Kodcr: "", Kodcn: "", Amr: "", Address: "", Kd: "03", Sd: "", Rg: "BN 5236025", Nd: "", Vd: "Et tortor consequat id porta.", Gr: &Gr, Yr: "1996", Mr: "", CbDate: &CbDate, CeDate: nil, Director: "", Founder: "", RowID: "1", Terrtype: ""}, 1, nil},
 		}
 
 		num := 0
-		etalonRecords := testCase.results
 		for res := range rowReadRes {
 			etalon := etalonRecords[num]
 			if etalon.Error == nil && res.Error != nil {
@@ -143,14 +220,8 @@ func Test_TerReader_Read(t *testing.T) {
 				t.Errorf("Number not correct/ Expected %d, go %d", res.Number, etalon.Number)
 			}
 
-			if etalon.Row != nil {
-				if res.Row == nil {
-					t.Errorf("get not correct Row. Expecter %+v, got nil", *etalon.Row)
-				} else if !reflect.DeepEqual(*res.Row, *etalon.Row) {
-					t.Errorf("get not correct Row. Expecter %+v, got %+v", *etalon.Row, *res.Row)
-				}
-			} else if res.Row != nil {
-				t.Errorf("get not correct Row. Expecter nil, got %+v", *res.Row)
+			if !reflect.DeepEqual(*res.Row, *etalon.Row) {
+				t.Errorf("get not correct Row. Expecter %+v, got %+v", *etalon.Row, *res.Row)
 			}
 
 			num++
@@ -158,82 +229,55 @@ func Test_TerReader_Read(t *testing.T) {
 
 		etalonNum := len(etalonRecords)
 		if num != etalonNum {
-			t.Errorf("received not correct num of records. Expected %d, got %d", etalonNum, num)
+			t.Errorf("received not correct num uf records. Expected %d, got %d", etalonNum, num)
 		}
-	}
-}
+	})
 
-func Test_TerReader_Reader_WithRealFile(t *testing.T) {
-	tr, err := NewTerReader(filePath, fileEncoding)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rowReadRes, err := tr.Read(5)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	Gr := time.Date(1988, time.September, 05, 0, 0, 0, 0, time.UTC)
-	CbDate := time.Date(2012, time.November, 10, 0, 0, 0, 0, time.UTC)
-	etalonRecords := []RowReadResult{
-		{&Row{Number: "1", Terror: "1", Tu: "3", Nameu: "Pharetra magna ac placerat", Descript: "Facilisi etiam dignissim diam quis enim lobortis. Suscipit adipiscing bibendum est ultricies integer quis auctor. At tempor commodo ullamcorper a lacus vestibulum sed arcu. Augue ut lectus arcu bibendum. Porttitor rhoncus dolor purus non enim praesent. Ac tincidunt vitae semper quis lectus nulla at volutpat diam.", Kodcr: "", Kodcn: "", Amr: "", Address: "", Kd: "03", Sd: "", Rg: "BN 5236025", Nd: "", Vd: "Et tortor consequat id porta.", Gr: &Gr, Yr: "1996", Mr: "", CbDate: &CbDate, CeDate: nil, Director: "", Founder: "", RowID: "1", Terrtype: ""}, 1, nil},
-	}
-
-	num := 0
-	for res := range rowReadRes {
-		etalon := etalonRecords[num]
-		if etalon.Error == nil && res.Error != nil {
-			t.Fatal(res.Error)
+	t.Run("when help data incorrect", func(t *testing.T) {
+		tr := TerReader{
+			rowDataMap: rowDataMap{
+				2: []rowData{},
+			},
+			rowNumbers: []uint64{1},
+			ctx:        context.Background(),
 		}
-		if etalon.Error != nil {
-			if res.Error == nil {
-				t.Errorf("error object not correct. Expected %v, got nil", etalon.Error)
-			} else if res.Error.Error() != etalon.Error.Error() {
-				t.Errorf("error message not correct. Expected \"%s\", got \"%s\"", etalon.Error.Error(), res.Error.Error())
+
+		rowReadRes, err := tr.Read(5)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		etalonError := errors.New("key '1' not exists is map rowDataMap")
+		for res := range rowReadRes {
+			if res.Row != nil {
+				t.Errorf("get not correct Row. Expecter nil, got %+v", *res.Row)
+			}
+			if res.Error.Error() != etalonError.Error() {
+				t.Errorf("error message not correct. Expected \"%s\", got \"%s\"", etalonError.Error(), res.Error.Error())
 			}
 		}
+	})
 
-		if res.Number != etalon.Number {
-			t.Errorf("Number not correct/ Expected %d, go %d", res.Number, etalon.Number)
+	t.Run("when allow empty enum values", func(t *testing.T) {
+		rows := []map[string]string{
+			{"NUMBER": "1", "TERROR": "not_support", "TU": "1", "NAMEU": "", "DESCRIPT": "", "KODCR": "", "KODCN": "", "AMR": "", "ADRESS": "", "KD": "04", "SD": "", "RG": "", "ND": "", "VD": "", "GR": "", "YR": "", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "1", "TERRTYPE": ""},
 		}
 
-		if !reflect.DeepEqual(*res.Row, *etalon.Row) {
-			t.Errorf("get not correct Row. Expecter %+v, got %+v", *etalon.Row, *res.Row)
+		dbfTable := newDbfTable(rows)
+		tr := TerReader{dbfTable: dbfTable, ctx: context.Background()}
+		tr.AllowEmptyEnumValues()
+
+		rowReadRes, err := tr.Read(5)
+		if err != nil {
+			t.Fatal(err)
 		}
 
-		num++
-	}
-
-	etalonNum := len(etalonRecords)
-	if num != etalonNum {
-		t.Errorf("received not correct num uf records. Expected %d, got %d", etalonNum, num)
-	}
-}
-
-func Test_TerReader_Reader_WhenHelpDataIncorrect(t *testing.T) {
-	tr := TerReader{
-		rowDataMap: rowDataMap{
-			2: []rowData{},
-		},
-		rowNumbers: []uint64{1},
-		ctx:        context.Background(),
-	}
-
-	rowReadRes, err := tr.Read(5)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	etalonError := errors.New("key '1' not exists is map rowDataMap")
-	for res := range rowReadRes {
-		if res.Row != nil {
-			t.Errorf("get not correct Row. Expecter nil, got %+v", *res.Row)
+		for res := range rowReadRes {
+			if res.Error != nil {
+				t.Errorf("return error when enum field is empty. Expected nil, return %s", res.Error)
+			}
 		}
-		if res.Error.Error() != etalonError.Error() {
-			t.Errorf("error message not correct. Expected \"%s\", got \"%s\"", etalonError.Error(), res.Error.Error())
-		}
-	}
+	})
 }
 
 func getTestCases() []readTestCase {
