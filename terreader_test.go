@@ -110,6 +110,23 @@ func TestTerReader_WithContext(t *testing.T) {
 	}
 }
 
+func TestTerReader_AllowEmptyEnumValues(t *testing.T) {
+	tr, err := NewTerReader(filePath, fileEncoding)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if tr.allowEmptyEnumValues {
+		t.Error("Option allowEmptyEnumValues has not correct value after struct initialize. Expected false, got true")
+	}
+
+	tr.AllowEmptyEnumValues()
+
+	if tr.allowEmptyEnumValues != true {
+		t.Error("Option allowEmptyEnumValues has not correct value after call AllowEmptyEnumValues. Expected false, got true")
+	}
+}
+
 func TestTerReader_Read(t *testing.T) {
 	t.Run("when use mock dbf file data", func(t *testing.T) {
 		for _, testCase := range getTestCases() {
@@ -237,6 +254,27 @@ func TestTerReader_Read(t *testing.T) {
 			}
 			if res.Error.Error() != etalonError.Error() {
 				t.Errorf("error message not correct. Expected \"%s\", got \"%s\"", etalonError.Error(), res.Error.Error())
+			}
+		}
+	})
+
+	t.Run("when allow empty enum values", func(t *testing.T) {
+		rows := []map[string]string{
+			{"NUMBER": "1", "TERROR": "not_support", "TU": "1", "NAMEU": "", "DESCRIPT": "", "KODCR": "", "KODCN": "", "AMR": "", "ADRESS": "", "KD": "04", "SD": "", "RG": "", "ND": "", "VD": "", "GR": "", "YR": "", "MR": "", "CB_DATE": "", "CE_DATE": "", "DIRECTOR": "", "FOUNDER": "", "ROW_ID": "1", "TERRTYPE": ""},
+		}
+
+		dbfTable := newDbfTable(rows)
+		tr := TerReader{dbfTable: dbfTable, ctx: context.Background()}
+		tr.AllowEmptyEnumValues()
+
+		rowReadRes, err := tr.Read(5)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for res := range rowReadRes {
+			if res.Error != nil {
+				t.Errorf("return error when enum field is empty. Expected nil, return %s", res.Error)
 			}
 		}
 	})

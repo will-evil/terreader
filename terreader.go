@@ -51,10 +51,11 @@ type rowDataMap map[uint64][]rowData
 
 // TerReader structure that provides functionality for reading dbf file.
 type TerReader struct {
-	dbfTable   dbfTable
-	rowDataMap rowDataMap
-	rowNumbers []uint64
-	ctx        context.Context
+	dbfTable             dbfTable
+	rowDataMap           rowDataMap
+	rowNumbers           []uint64
+	ctx                  context.Context
+	allowEmptyEnumValues bool
 }
 
 // NewTerReader is a constructor for TerReader structure.
@@ -81,6 +82,14 @@ func NewTerReaderFromByteSlice(data []byte, encoding string) (*TerReader, error)
 // The provided ctx must be non-nil.
 func (tr *TerReader) WithContext(ctx context.Context) *TerReader {
 	tr.ctx = ctx
+
+	return tr
+}
+
+// AllowEmptyEnumValues sets allowEmptyEnumValues option to true.
+// Option allowEmptyEnumValues says then not need return error if enum field is empty in all rows of record.
+func (tr *TerReader) AllowEmptyEnumValues() *TerReader {
+	tr.allowEmptyEnumValues = true
 
 	return tr
 }
@@ -254,6 +263,10 @@ func (tr *TerReader) getEnumValue(fieldName string, rowDataSlice []rowData) (str
 		if isInclude(val, enumValues) {
 			return val, nil
 		}
+	}
+
+	if tr.allowEmptyEnumValues {
+		return "", nil
 	}
 
 	return "", fmt.Errorf("can not find a suitable value for '%s'", fieldName)
